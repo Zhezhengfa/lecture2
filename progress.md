@@ -44,62 +44,67 @@
 9. **完成自主实践三项（10-07）**：新建 `bin/practice.dart`，包含任务1 空安全改写（4 个改写点）、任务2 命名参数实验报告生成器（3 种调用方式）、任务3 成绩分级器扩展（边界 0/100 与非法输入拦截），`dart run bin/practice.dart` 全部输出正确。
 10. **提交并推送实践代码（10-07）**：提交 `227b839`；推送时一度遇到 `Connection was reset` 网络错误，确认代码已在本地安全提交后重试，推送成功，本地与 `origin/main` 同步。
 
-## 四、关键代码
+## 四、关键代码（空安全改写前后对照）
 
-### 代码段 1：空安全与变量类型（`bin/types_demo.dart`）
+以任务1 为例。辅助函数 `getNickname()`、`getGrade()` 均返回 `null`，`fetchToken()` 返回 `'abc123'`。
+
+### 代码段 1：改写前（4 处空安全隐患）
 
 ```dart
-void typesDemo() {
-  var title = '第一次作业';         // var 自动推断为 String（不可空）
-  int year = 2026;                 // 显式声明 int
-  double score = 92.5;             // 显式声明 double
-  print('$title $year 成绩$score'); // 字符串插值
+void unsafeVersion() {
+  String? nickname = getNickname();
+  print('昵称长度：${nickname.length}');   // 隐患① 编译错误
 
-  String? nickname;                // 可空类型，默认值为 null
-  print(nickname?.length);         // ?. 安全调用：为 null 时返回 null，不报错
-  print(nickname ?? '未填写');      // ?? 空合并：为 null 时取右侧默认值
+  String? grade = getGrade();
+  String level = grade;                    // 隐患② 编译错误
+  print('等级：$level');
+
+  String? team;
+  print('团队名：$team，长度：${team!.length}'); // 隐患③ 运行时抛异常
 }
+
+// 隐患④（类成员字段场景）：非空字段声明时必须初始化，否则编译错误
+// class Account {
+//   String token;   // 编译错误，需改为 late String token;
+// }
 ```
 
-**逐行解释**：第 2 行用 `var` 让编译器推断类型（推断后类型锁死，不能再赋其他类型）；第 3、4 行显式指定 `int` 和 `double`；第 5 行通过 `$变量` 做字符串插值。第 7 行 `String?` 表示可空字符串，是 Dart 空安全的核心语法；第 8 行 `?.` 避免对 null 取属性导致异常；第 9 行 `??` 提供兜底默认值。
+四处隐患分别是：① 对可空变量直接用 `.length`，编译不通过；② 把 `String?` 赋给 `String`，类型不兼容；③ 用空断言 `!` 强行压过编译，null 时运行时抛 `Null check operator used on a null value`；④ 非空成员字段声明时无法立即赋值，编译不通过。
 
-**是否 AI 生成**：TraeCode 辅助生成骨架，本人补全注释并调整变量值。**验证方式**：`dart run` 输出 `第一次作业 2026 成绩92.5 / null / 未填写`，符合预期。
-
-### 代码段 2：命名参数与箭头函数（`bin/func_demo.dart`）
+### 代码段 2：改写后（`bin/practice.dart` 任务1 安全版本）
 
 ```dart
-void enroll({required String name, int age = 18, String? className}) {
-  print('$name，$age 岁，${className ?? "未分班"}');
-}
-int add(int a, int b) => a + b;   // 箭头函数，单行表达式简写
+void task1NullableRewrite() {
+  String? nickname = getNickname();
+  print('昵称长度：${nickname?.length}');   // 改写① ?. 安全调用
 
-void funcDemo() {
-  enroll(name: '李华', className: '2班');  // 命名参数调用，age 用默认值 18
-  print(add(3, 5));                       // 输出 8
-}
-```
+  String? grade = getGrade();
+  String level = grade ?? '未评定';         // 改写② ?? 提供兜底默认值
+  print('等级：$level');
 
-**逐行解释**：`enroll` 用花括号 `{}` 定义命名参数：`required` 表示必传，`age = 18` 给默认值，`className` 可空；函数体用 `??` 为可空参数兜底。`add` 用 `=>` 箭头语法省略 `return`。调用时通过 `参数名: 值` 传参，`age` 未传则取默认 18。
-
-**是否 AI 生成**：函数签名由本人设计，TraeCode 校验命名参数语法。**验证方式**：输出 `李华，18 岁，2班` 和 `8`，确认默认值与空兜底均生效。
-
-### 代码段 3：成绩分级器扩展（`bin/practice.dart` 任务3）
-
-```dart
-String gradeOfExtended(int score) {
-  if (score < 0 || score > 100) {  // 先拦截非法输入
-    return '非法输入';
+  String? team;
+  if (team != null) {                       // 改写③ 先判空再使用
+    print('团队名：$team，长度：${team.length}'); // 分支内类型自动提升，无需 !
+  } else {
+    print('团队名：未加入');
   }
-  if (score >= 90) return '优';     // 100 在此分支
-  if (score >= 80) return '良';
-  if (score >= 60) return '中';
-  return '不及格';                  // 0 在此分支；兜底保证所有路径都有返回值
+
+  late String token;                        // 改写④ late 延迟初始化
+  token = fetchToken();
+  print('令牌：$token');
 }
 ```
 
-**逐行解释**：第一步用 `||`（逻辑或）拦截 `<0` 或 `>100` 的非法输入；之后按区间从高到低多分支判断，每个分支直接 `return`；最后的 `return '不及格'` 是兜底，既覆盖 0 分，又保证函数对任何输入都有返回值（满足 Dart 的返回路径穷尽检查）。测试用例 `[100, 0, -1, 120, 59, 60, 89, 90, 75]` 覆盖了全部边界。
+### 逐点对照解释
 
-**是否 AI 生成**：逻辑由本人编写（课堂版 `gradeOf` 的扩展），TraeCode 提示先拦截非法输入、保留兜底返回。**验证方式**：`dart run bin/practice.dart` 输出 100→优、0→不及格、-1/120→非法输入、59→不及格、60→中、89→良、90→优、75→中，9 个用例全部正确。
+| 改写点 | 改写前 | 问题 | 改写后 | 原理 |
+|---|---|---|---|---|
+| ① | `nickname.length` | 可空变量直接取属性，**编译错误** | `nickname?.length` | `?.` 安全调用：接收者为 null 时短路返回 null，不抛异常 |
+| ② | `String level = grade` | `String?` 不能赋给 `String`，**编译错误** | `grade ?? '未评定'` | `??` 空合并：左侧为 null 时取右侧值，结果类型安全降为 `String` |
+| ③ | `team!.length` | 空断言 `!` 能压过编译，但 null 时**运行时抛异常** | `if (team != null) { team.length }` | 判空后分支内发生"类型提升"，`team` 自动变成非空，无需 `!`；else 分支处理 null |
+| ④ | 非空字段声明时必须赋值 | 声明时拿不到值，**编译错误** | `late String token;` 使用前赋值 | `late` 承诺"使用前一定初始化"；典型用于类成员字段，违背承诺会抛 `LateInitializationError` |
+
+**是否 AI 生成**：TraeCode 提示了 `?.`、`??`、判空类型提升、`late` 四种改写手段，四个改写点和注释由本人对照隐患逐个手写。**验证方式**：`dart run bin/practice.dart` 任务1 实际输出四行——`昵称长度：null`、`等级：未评定`、`团队名：未加入`、`令牌：abc123`，与逐点推导的结果一致；改写后代码无空安全编译告警。
 
 ## 五、检查点结果
 
